@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Upload, X, Loader2, ArrowRight, Zap, History, Copy, FileDown, CheckCircle2 } from "lucide-react";
+import { Upload, X, Loader2, ArrowRight, History, Copy, FileDown, CheckCircle2, Folder } from "lucide-react";
 import Image from "next/image";
 import AnimatedBackground from "./components/AnimatedBackground";
 import PWAInstall from "./components/PWAInstall";
@@ -30,6 +30,7 @@ export default function Home() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const solutionRef = useRef<HTMLDivElement>(null);
+  const projects = ["science", "math"];
 
   // Load history from localStorage
   useEffect(() => {
@@ -165,10 +166,10 @@ export default function Home() {
             <SignedIn>
               <button 
                 onClick={() => setShowHistory(!showHistory)}
-                className="flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+                className="md:hidden flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
               >
                 <History className="w-4 h-4" />
-                History
+                Recent Solves
               </button>
               <UserButton afterSignOutUrl="/" />
             </SignedIn>
@@ -220,9 +221,43 @@ export default function Home() {
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10">
-        <div className="max-w-2xl w-full space-y-8">
+      <div className="flex-1 flex relative z-10">
+        {/* Sidebar */}
+        <aside className="hidden md:flex w-64 flex-col border-r border-white/10 bg-black/50 backdrop-blur-sm p-4">
+          <div className="flex items-center justify-between px-2 mb-4">
+            <h2 className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Projects</h2>
+            <button className="text-zinc-400 hover:text-white transition-colors text-lg leading-none">+</button>
+          </div>
+
+          <div className="space-y-1 pb-4 border-b border-white/10">
+            {projects.map((project) => (
+              <button
+                key={project}
+                className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition-colors"
+              >
+                <span className="flex items-center gap-2 capitalize">
+                  <Folder className="w-4 h-4" />
+                  {project}
+                </span>
+                <span className="text-xs text-zinc-500">0</span>
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            className={`mt-4 w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              showHistory ? "bg-white/10 text-white" : "text-zinc-300 hover:bg-white/5 hover:text-white"
+            }`}
+          >
+            <History className="w-4 h-4" />
+            Recent Solves
+          </button>
+        </aside>
+
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col items-center justify-center p-6">
+          <div className="max-w-2xl w-full space-y-8">
           
           {/* Header */}
           {!preview && (
@@ -367,9 +402,10 @@ export default function Home() {
             </div>
           )}
 
+          </div>
         </div>
       </div>
-      
+
       {/* Footer */}
       <footer className="py-8 text-center text-zinc-600 text-sm relative z-10">
         <p>&copy; {new Date().getFullYear()} Platypus AI. AI can make mistakes.</p>
