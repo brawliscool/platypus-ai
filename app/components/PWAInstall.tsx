@@ -88,7 +88,7 @@ export default function PWAInstall() {
           <Download className="w-6 h-6 text-white" />
         </div>
         <div className="flex-1">
-          <h3 className="font-bold text-white mb-1">Install Platypus AI</h3>
+          <h3 className="font-bold text-white mb-1">Install Garage Roll</h3>
           {isIOS ? (
             <p className="text-sm text-zinc-400">
               Tap the share button <span className="inline-block px-1">⬆️</span> then &quot;Add to Home Screen&quot;.
@@ -96,7 +96,7 @@ export default function PWAInstall() {
           ) : (
             <>
               <p className="text-sm text-zinc-400 mb-3">
-                Get quick access from your home screen.
+                Keep your car collection one tap away from your home screen.
               </p>
               <button
                 onClick={handleInstall}

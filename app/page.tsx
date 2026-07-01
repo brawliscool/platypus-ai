@@ -1,407 +1,494 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Upload, X, Loader2, ArrowRight, History, Copy, FileDown, CheckCircle2, Folder } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import {
+  Camera,
+  Car,
+  CheckCircle2,
+  Gauge,
+  Loader2,
+  MapPin,
+  Plus,
+  Search,
+  Sparkles,
+  Star,
+  Trash2,
+  Upload,
+  WifiOff,
+  X,
+} from "lucide-react";
 import AnimatedBackground from "./components/AnimatedBackground";
 import PWAInstall from "./components/PWAInstall";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
-import { SignInButton, SignUpButton, UserButton, SignedIn, SignedOut } from "@clerk/nextjs";
 
-interface SavedSolution {
+interface CarPhoto {
   id: string;
-  timestamp: number;
-  image: string;
-  answer: string;
+  photo: string;
+  make: string;
+  model: string;
+  year: string;
+  color: string;
+  location: string;
+  notes: string;
+  favorite: boolean;
+  createdAt: number;
+}
+
+type DraftCar = Omit<CarPhoto, "id" | "createdAt">;
+
+const STORAGE_KEY = "garage_roll_collection";
+
+const emptyDraft: DraftCar = {
+  photo: "",
+  make: "",
+  model: "",
+  year: "",
+  color: "",
+  location: "",
+  notes: "",
+  favorite: false,
+};
+
+function formatDate(timestamp: number) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(timestamp));
+}
+
+function readLocalCollection() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? (JSON.parse(stored) as CarPhoto[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function compressImage(file: File) {
+  const bitmap = await createImageBitmap(file);
+  const maxSide = 1400;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Unable to prepare this photo. Please try another image.");
+  }
+
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.84);
 }
 
 export default function Home() {
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [answer, setAnswer] = useState<string | null>(null);
+  const [collection, setCollection] = useState<CarPhoto[]>([]);
+  const [draft, setDraft] = useState<DraftCar>(emptyDraft);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isReadingPhoto, setIsReadingPhoto] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [history, setHistory] = useState<SavedSolution[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [copied, setCopied] = useState(false);
-  
+  const [offlineMode, setOfflineMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const solutionRef = useRef<HTMLDivElement>(null);
-  const projects = ["science", "math"];
 
-  // Load history from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("platypus_history");
-    if (saved) {
-      try {
-        setHistory(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to load history", e);
-      }
-    }
+    const localCars = readLocalCollection();
+    setCollection(localCars);
+    setSelectedId(localCars[0]?.id ?? null);
+
+    fetch("/api/cars")
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data: { cars: CarPhoto[] }) => {
+        if (data.cars.length > 0) {
+          setCollection(data.cars);
+          setSelectedId(data.cars[0].id);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.cars));
+        }
+      })
+      .catch(() => setOfflineMode(true));
   }, []);
 
-  const saveToHistory = (img: string, ans: string) => {
-    const newEntry: SavedSolution = {
-      id: Date.now().toString(),
-      timestamp: Date.now(),
-      image: img,
-      answer: ans,
-    };
-    const updatedHistory = [newEntry, ...history].slice(0, 10); // Keep last 10
-    setHistory(updatedHistory);
-    localStorage.setItem("platypus_history", JSON.stringify(updatedHistory));
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(collection));
+  }, [collection]);
+
+  const filteredCars = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return collection;
+
+    return collection.filter((carPhoto) =>
+      [carPhoto.make, carPhoto.model, carPhoto.year, carPhoto.color, carPhoto.location, carPhoto.notes]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+  }, [collection, query]);
+
+  const selectedCar = collection.find((carPhoto) => carPhoto.id === selectedId) ?? filteredCars[0] ?? null;
+  const favoriteCount = collection.filter((carPhoto) => carPhoto.favorite).length;
+  const latestSpot = collection[0]?.location || "No spots yet";
+
+  const updateDraft = (field: keyof DraftCar, value: string | boolean) => {
+    setDraft((current) => ({ ...current, [field]: value }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (selected) {
-      setFile(selected);
-      setPreview(URL.createObjectURL(selected));
-      setAnswer(null);
-      setError(null);
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0];
+    if (!selected) return;
+
+    setError(null);
+    setIsReadingPhoto(true);
+
+    try {
+      const photo = await compressImage(selected);
+      setDraft((current) => ({ ...current, photo }));
+    } catch (photoError) {
+      setError(photoError instanceof Error ? photoError.message : "Unable to read this image.");
+    } finally {
+      setIsReadingPhoto(false);
     }
   };
 
-  const clearFile = () => {
-    setFile(null);
-    setPreview(null);
-    setAnswer(null);
+  const resetDraft = () => {
+    setDraft(emptyDraft);
     setError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   };
 
-  const convertToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = (error) => reject(error);
-    });
-  };
-
-  const handleSubmit = async () => {
-    if (!file) return;
-
-    setLoading(true);
-    setAnswer(null);
+  const saveCar = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setError(null);
 
+    if (!draft.photo) {
+      setError("Add a car photo before saving this spot.");
+      return;
+    }
+
+    if (!draft.make.trim() && !draft.model.trim()) {
+      setError("Add at least a make or model so this car is easy to find later.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    const optimisticCar: CarPhoto = {
+      ...draft,
+      id: crypto.randomUUID(),
+      make: draft.make.trim(),
+      model: draft.model.trim(),
+      year: draft.year.trim(),
+      color: draft.color.trim(),
+      location: draft.location.trim(),
+      notes: draft.notes.trim(),
+      createdAt: Date.now(),
+    };
+
     try {
-      const base64 = await convertToBase64(file);
-      
-      const response = await fetch("/api/solve", {
+      const response = await fetch("/api/cars", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: base64 }),
+        body: JSON.stringify(draft),
       });
 
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Server error: Received invalid response format.");
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: string };
+        throw new Error(body.error || "Unable to save this car.");
       }
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Something went wrong");
-
-      setAnswer(data.answer);
-      saveToHistory(preview, data.answer);
-    } catch (err: any) {
-      setError(err.message || "Sorry, something went wrong. Please try again.");
+      const body = (await response.json()) as { car: CarPhoto };
+      setCollection((current) => [body.car, ...current]);
+      setSelectedId(body.car.id);
+      setOfflineMode(false);
+    } catch (saveError) {
+      setCollection((current) => [optimisticCar, ...current]);
+      setSelectedId(optimisticCar.id);
+      setOfflineMode(true);
+      if (saveError instanceof Error) {
+        setError(`${saveError.message} Saved locally on this device.`);
+      }
     } finally {
-      setLoading(false);
+      resetDraft();
+      setIsSaving(false);
     }
   };
 
-  const copyToClipboard = () => {
-    if (answer) {
-      navigator.clipboard.writeText(answer);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
+  const deleteCar = async (carId: string) => {
+    setCollection((current) => current.filter((carPhoto) => carPhoto.id !== carId));
+    setSelectedId((current) => (current === carId ? null : current));
 
-  const downloadPDF = async () => {
-    if (solutionRef.current) {
-      const canvas = await html2canvas(solutionRef.current, {
-        backgroundColor: "#000000",
-        scale: 2,
-      });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save("solution.pdf");
+    try {
+      await fetch(`/api/cars?id=${encodeURIComponent(carId)}`, { method: "DELETE" });
+      setOfflineMode(false);
+    } catch {
+      setOfflineMode(true);
     }
   };
 
   return (
-    <main className="min-h-screen bg-black text-white selection:bg-zinc-800 flex flex-col font-sans relative">
+    <main className="min-h-screen bg-[#070707] text-white selection:bg-amber-500/30 flex flex-col font-sans relative">
       <AnimatedBackground />
       <PWAInstall />
-      
-      {/* Navigation */}
-      <nav className="border-b border-white/10 py-4 relative z-10">
-        <div className="max-w-5xl mx-auto px-6 flex items-center justify-between">
-          <div className="flex items-center gap-3 font-bold text-xl tracking-tight">
-            <div className="relative w-10 h-10">
-              <Image 
-                src="/logo.png" 
-                alt="Platypus AI Logo" 
-                fill 
-                className="object-contain"
-                priority
-              />
+
+      <nav className="border-b border-white/10 py-4 relative z-10 bg-black/30 backdrop-blur-xl">
+        <div className="max-w-6xl mx-auto px-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-amber-400 text-black flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.25)]">
+              <Car className="w-6 h-6" />
             </div>
-            <span>Platypus AI</span>
-          </div>
-          <div className="flex items-center gap-6">
-            <SignedIn>
-              <UserButton afterSignOutUrl="/" />
-            </SignedIn>
-            <SignedOut>
-              <SignInButton mode="modal">
-                <button className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">
-                  Log in
-                </button>
-              </SignInButton>
-              <SignUpButton mode="modal">
-                <button className="px-4 py-2 rounded-full bg-white text-black text-sm font-bold hover:bg-zinc-200 transition-colors">
-                  Sign up
-                </button>
-              </SignUpButton>
-            </SignedOut>
-          </div>
-        </div>
-      </nav>
-
-      {/* History Sidebar */}
-      {showHistory && (
-        <div className="fixed inset-y-0 right-0 w-80 bg-zinc-900 border-l border-white/10 z-40 p-6 overflow-y-auto animate-in slide-in-from-right duration-300">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="font-bold text-lg">History</h2>
-            <button onClick={() => setShowHistory(false)}><X className="w-5 h-5" /></button>
-          </div>
-          <div className="space-y-4">
-            {history.length === 0 ? (
-              <p className="text-zinc-500 text-sm">No recent solutions found.</p>
-            ) : (
-              history.map((item) => (
-                <div 
-                  key={item.id} 
-                  className="bg-black/40 border border-white/5 p-3 rounded-xl cursor-pointer hover:border-white/20 transition-all"
-                  onClick={() => {
-                    setPreview(item.image);
-                    setAnswer(item.answer);
-                    setShowHistory(false);
-                  }}
-                >
-                  <div className="relative w-full h-24 rounded-lg overflow-hidden mb-2">
-                    <Image src={item.image} alt="History" fill className="object-cover" unoptimized />
-                  </div>
-                  <p className="text-xs text-zinc-500">{new Date(item.timestamp).toLocaleDateString()}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 flex relative z-10">
-        {/* Sidebar */}
-        <aside className="hidden md:flex w-64 flex-col border-r border-white/10 bg-black/50 backdrop-blur-sm p-4">
-          <div className="flex items-center justify-between px-2 mb-4">
-            <h2 className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Projects</h2>
-            <button className="text-zinc-400 hover:text-white transition-colors text-lg leading-none">+</button>
-          </div>
-
-          <div className="space-y-1 pb-4 border-b border-white/10">
-            {projects.map((project) => (
-              <button
-                key={project}
-                className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition-colors"
-              >
-                <span className="flex items-center gap-2 capitalize">
-                  <Folder className="w-4 h-4" />
-                  {project}
-                </span>
-                <span className="text-xs text-zinc-500">0</span>
-              </button>
-            ))}
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-amber-200/70">iOS garage</p>
+              <h1 className="font-black text-xl tracking-tight">Garage Roll</h1>
+            </div>
           </div>
 
           <button
-            onClick={() => setShowHistory(!showHistory)}
-            className={`mt-4 w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-              showHistory ? "bg-white/10 text-white" : "text-zinc-300 hover:bg-white/5 hover:text-white"
-            }`}
+            onClick={() => fileInputRef.current?.click()}
+            className="hidden sm:flex items-center gap-2 rounded-full bg-white text-black px-5 py-3 text-sm font-bold hover:bg-amber-200 transition-colors"
           >
-            <History className="w-4 h-4" />
-            Recent Solutions
+            <Camera className="w-4 h-4" />
+            Capture car
           </button>
-        </aside>
+        </div>
+      </nav>
 
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col items-center justify-center p-6">
-          <div className="max-w-2xl w-full space-y-8">
-          
-          {/* Header */}
-          {!preview && (
-            <div className="text-center space-y-4">
-              <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-white">
-                Homework solved in seconds.
-              </h1>
-              <p className="text-lg text-zinc-400 max-w-lg mx-auto">
-                Upload a picture of your assignment and let our AI provide detailed, step-by-step solutions.
+      <section className="relative z-10 max-w-6xl mx-auto w-full px-5 py-8 md:py-12">
+        <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-6 items-start">
+          <div className="space-y-6">
+            <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 md:p-8 backdrop-blur-xl shadow-2xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-semibold text-amber-100 mb-5">
+                <Sparkles className="w-3.5 h-3.5" />
+                Built for quick curbside car spotting
+              </div>
+              <h2 className="text-4xl md:text-6xl font-black tracking-tight leading-none">
+                Collect every car that catches your eye.
+              </h2>
+              <p className="text-zinc-300 text-lg mt-5 leading-relaxed">
+                Snap a picture, tag the make, model, color, location, and notes, then browse your personal garage from your iPhone home screen.
               </p>
+
+              <div className="grid grid-cols-3 gap-3 mt-7">
+                <div className="rounded-2xl bg-black/40 border border-white/10 p-4">
+                  <p className="text-3xl font-black">{collection.length}</p>
+                  <p className="text-xs text-zinc-500 mt-1">cars saved</p>
+                </div>
+                <div className="rounded-2xl bg-black/40 border border-white/10 p-4">
+                  <p className="text-3xl font-black">{favoriteCount}</p>
+                  <p className="text-xs text-zinc-500 mt-1">favorites</p>
+                </div>
+                <div className="rounded-2xl bg-black/40 border border-white/10 p-4">
+                  <p className="text-sm font-bold truncate">{latestSpot}</p>
+                  <p className="text-xs text-zinc-500 mt-1">latest spot</p>
+                </div>
+              </div>
             </div>
-          )}
 
-          {/* Upload Area */}
-          <div 
-            className={`
-              relative group cursor-pointer 
-              border-2 border-dashed rounded-3xl p-10 
-              transition-all duration-300 ease-in-out backdrop-blur-sm
-              ${preview ? 'border-zinc-800 bg-zinc-900/30' : 'border-zinc-800 hover:border-white hover:bg-zinc-900/30'}
-            `}
-            onClick={() => !preview && fileInputRef.current?.click()}
-          >
-            <input 
-              type="file" 
-              ref={fileInputRef}
-              className="hidden" 
-              accept="image/*"
-              onChange={handleFileChange}
-            />
+            <form onSubmit={saveCar} className="rounded-[2rem] border border-white/10 bg-zinc-950/80 p-5 md:p-6 backdrop-blur-xl">
+              <div className="flex items-center justify-between gap-4 mb-5">
+                <div>
+                  <h3 className="text-xl font-black">Add a car</h3>
+                  <p className="text-sm text-zinc-500">Use the camera button on iOS for instant capture.</p>
+                </div>
+                {offlineMode && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-500/10 px-3 py-1 text-xs text-orange-200">
+                    <WifiOff className="w-3.5 h-3.5" />
+                    local
+                  </span>
+                )}
+              </div>
 
-            {preview ? (
-              <div className="relative w-full h-64 md:h-80 rounded-xl overflow-hidden shadow-2xl">
-                <Image 
-                  src={preview} 
-                  alt="Homework preview" 
-                  fill 
-                  className="object-contain"
-                  unoptimized
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="relative w-full overflow-hidden rounded-3xl border-2 border-dashed border-white/15 bg-white/[0.03] hover:border-amber-300/70 transition-colors"
+              >
+                {draft.photo ? (
+                  <div className="relative h-56">
+                    <Image src={draft.photo} alt="New car preview" fill className="object-cover" unoptimized />
+                    <span className="absolute top-3 right-3 rounded-full bg-black/70 px-3 py-1 text-xs font-bold text-white backdrop-blur">
+                      Change photo
+                    </span>
+                  </div>
+                ) : (
+                  <div className="h-44 flex flex-col items-center justify-center gap-3 text-zinc-400">
+                    {isReadingPhoto ? <Loader2 className="w-8 h-8 animate-spin" /> : <Upload className="w-8 h-8" />}
+                    <span className="font-semibold text-white">{isReadingPhoto ? "Preparing photo..." : "Take or upload a car photo"}</span>
+                    <span className="text-xs">JPG, PNG, HEIC exports, or WEBP</span>
+                  </div>
+                )}
+              </button>
+
+              <div className="grid sm:grid-cols-2 gap-3 mt-4">
+                <input value={draft.make} onChange={(event) => updateDraft("make", event.target.value)} placeholder="Make, e.g. Porsche" className="garage-input" />
+                <input value={draft.model} onChange={(event) => updateDraft("model", event.target.value)} placeholder="Model, e.g. 911 GT3" className="garage-input" />
+                <input value={draft.year} onChange={(event) => updateDraft("year", event.target.value)} placeholder="Year" inputMode="numeric" className="garage-input" />
+                <input value={draft.color} onChange={(event) => updateDraft("color", event.target.value)} placeholder="Color" className="garage-input" />
+                <input value={draft.location} onChange={(event) => updateDraft("location", event.target.value)} placeholder="Location spotted" className="garage-input sm:col-span-2" />
+                <textarea value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} placeholder="Notes: trim, wheels, story, condition..." className="garage-input sm:col-span-2 min-h-24 resize-none" />
+              </div>
+
+              <label className="flex items-center gap-3 mt-4 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={draft.favorite}
+                  onChange={(event) => updateDraft("favorite", event.target.checked)}
+                  className="size-4 accent-amber-400"
                 />
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    clearFile();
-                  }}
-                  className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white p-2 rounded-full backdrop-blur-md transition-colors"
+                Mark as a favorite spot
+              </label>
+
+              {error && <p className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</p>}
+
+              <div className="flex gap-3 mt-5">
+                <button
+                  type="submit"
+                  disabled={isSaving || isReadingPhoto}
+                  className="flex-1 rounded-full bg-amber-300 px-5 py-3 font-black text-black hover:bg-amber-200 disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-2"
                 >
-                  <X className="w-5 h-5" />
+                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  Save to garage
+                </button>
+                <button type="button" onClick={resetDraft} className="rounded-full border border-white/10 px-5 py-3 font-bold text-zinc-300 hover:text-white">
+                  Clear
                 </button>
               </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center text-center py-10 space-y-4">
-                <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center group-hover:bg-zinc-800 group-hover:shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all">
-                  <Upload className="w-8 h-8 text-zinc-500 group-hover:text-white transition-colors" />
+            </form>
+          </div>
+
+          <div className="space-y-5">
+            <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-4 md:p-5 backdrop-blur-xl">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search make, model, color, location, notes..."
+                  className="w-full rounded-full border border-white/10 bg-black/40 py-3 pl-11 pr-4 text-sm outline-none focus:border-amber-300/70"
+                />
+              </div>
+            </div>
+
+            {selectedCar && (
+              <article className="overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950/90 shadow-2xl">
+                <div className="relative h-[22rem]">
+                  <Image src={selectedCar.photo} alt={`${selectedCar.make} ${selectedCar.model}`} fill className="object-cover" unoptimized priority />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent" />
+                  <div className="absolute bottom-5 left-5 right-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm text-amber-100 font-bold">{selectedCar.year || "Unknown year"}</p>
+                        <h3 className="text-3xl md:text-4xl font-black tracking-tight">
+                          {[selectedCar.make, selectedCar.model].filter(Boolean).join(" ")}
+                        </h3>
+                      </div>
+                      {selectedCar.favorite && (
+                        <div className="rounded-full bg-amber-300 p-3 text-black">
+                          <Star className="w-5 h-5 fill-current" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-semibold text-lg text-white">Click to upload image</p>
-                  <p className="text-sm text-zinc-500 mt-1">Supports JPG, PNG, WEBP</p>
+
+                <div className="p-5 md:p-6 grid sm:grid-cols-3 gap-3">
+                  <div className="rounded-2xl bg-white/[0.04] p-4 border border-white/10">
+                    <Gauge className="w-4 h-4 text-amber-200 mb-2" />
+                    <p className="text-xs text-zinc-500">Color</p>
+                    <p className="font-bold">{selectedCar.color || "Unlisted"}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/[0.04] p-4 border border-white/10">
+                    <MapPin className="w-4 h-4 text-amber-200 mb-2" />
+                    <p className="text-xs text-zinc-500">Location</p>
+                    <p className="font-bold">{selectedCar.location || "Unlisted"}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/[0.04] p-4 border border-white/10">
+                    <CheckCircle2 className="w-4 h-4 text-amber-200 mb-2" />
+                    <p className="text-xs text-zinc-500">Added</p>
+                    <p className="font-bold">{formatDate(selectedCar.createdAt)}</p>
+                  </div>
+                  {selectedCar.notes && (
+                    <p className="sm:col-span-3 rounded-2xl bg-white/[0.04] p-4 border border-white/10 text-zinc-300 leading-relaxed">
+                      {selectedCar.notes}
+                    </p>
+                  )}
                 </div>
+              </article>
+            )}
+
+            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredCars.map((carPhoto) => (
+                <button
+                  key={carPhoto.id}
+                  onClick={() => setSelectedId(carPhoto.id)}
+                  className={`group text-left overflow-hidden rounded-3xl border bg-white/[0.04] transition-all ${
+                    selectedCar?.id === carPhoto.id ? "border-amber-300/80" : "border-white/10 hover:border-white/30"
+                  }`}
+                >
+                  <div className="relative h-40">
+                    <Image src={carPhoto.photo} alt={`${carPhoto.make} ${carPhoto.model}`} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />
+                    <div className="absolute top-3 right-3 flex gap-2">
+                      {carPhoto.favorite && <Star className="w-4 h-4 text-amber-300 fill-current" />}
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          deleteCar(carPhoto.id);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            deleteCar(carPhoto.id);
+                          }
+                        }}
+                        className="rounded-full bg-black/60 p-2 text-zinc-300 hover:text-red-200 backdrop-blur"
+                        aria-label={`Delete ${carPhoto.make} ${carPhoto.model}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <p className="font-black truncate">{[carPhoto.make, carPhoto.model].filter(Boolean).join(" ")}</p>
+                    <p className="text-sm text-zinc-500 truncate">{carPhoto.location || carPhoto.color || "Car spot"}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {filteredCars.length === 0 && (
+              <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-10 text-center">
+                <Car className="w-10 h-10 mx-auto text-zinc-600" />
+                <h3 className="font-black text-xl mt-4">No cars found</h3>
+                <p className="text-zinc-500 mt-2">{collection.length === 0 ? "Capture your first car to start the garage." : "Try a different search."}</p>
+                {query && (
+                  <button onClick={() => setQuery("")} className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm font-bold">
+                    <X className="w-4 h-4" />
+                    Clear search
+                  </button>
+                )}
               </div>
             )}
           </div>
-
-          {/* Action Button */}
-          {preview && !answer && !error && (
-            <div className="flex justify-center">
-              <button
-                onClick={handleSubmit}
-                disabled={loading}
-                className="
-                  flex items-center gap-2 bg-white text-black px-8 py-4 rounded-full 
-                  font-semibold text-lg hover:bg-zinc-200 disabled:opacity-50 
-                  disabled:cursor-not-allowed transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]
-                "
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    Solve Problem
-                    <ArrowRight className="w-5 h-5" />
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-
-          {/* Error Message */}
-          {error && (
-            <div className="bg-red-900/20 border border-red-900/50 text-red-200 p-4 rounded-2xl text-center">
-              {error}
-              <button onClick={clearFile} className="block mx-auto mt-2 underline text-sm">Try another image</button>
-            </div>
-          )}
-
-          {/* Answer Section */}
-          {answer && (
-            <div 
-              ref={solutionRef}
-              className="bg-zinc-900/50 backdrop-blur-md rounded-2xl p-8 border border-white/5 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500"
-            >
-              <div className="flex justify-between items-start mb-6">
-                <h3 className="font-bold text-xl text-white flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
-                  Solution
-                </h3>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={copyToClipboard}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-zinc-400 hover:text-white"
-                    title="Copy to clipboard"
-                  >
-                    {copied ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
-                  </button>
-                  <button 
-                    onClick={downloadPDF}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-zinc-400 hover:text-white"
-                    title="Download as PDF"
-                  >
-                    <FileDown className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-              
-              <div className="prose prose-invert max-w-none text-zinc-300 leading-relaxed">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {answer}
-                </ReactMarkdown>
-              </div>
-              
-              <div className="mt-8 pt-8 border-t border-white/5 flex justify-end">
-                <button 
-                  onClick={clearFile}
-                  className="text-sm font-medium text-zinc-500 hover:text-white underline decoration-zinc-700 hover:decoration-white underline-offset-4 transition-all"
-                >
-                  Upload another
-                </button>
-              </div>
-            </div>
-          )}
-
-          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Footer */}
       <footer className="py-8 text-center text-zinc-600 text-sm relative z-10">
-        <p>&copy; {new Date().getFullYear()} Platypus AI. AI can make mistakes.</p>
+        <p>&copy; {new Date().getFullYear()} Garage Roll. Collect responsibly and respect private property.</p>
       </footer>
     </main>
   );

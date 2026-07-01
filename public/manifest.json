@@ -1,7 +1,7 @@
 {
-  "name": "Platypus AI",
-  "short_name": "Platypus",
-  "description": "Get instant homework answers with AI",
+  "name": "Garage Roll",
+  "short_name": "Garage Roll",
+  "description": "Collect and organize pictures of cars from your iPhone.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
@@ -21,7 +21,7 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["education", "productivity"],
+  "categories": ["photo", "lifestyle", "utilities"],
   "screenshots": [],
   "prefer_related_applications": false
 }
