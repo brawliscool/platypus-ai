@@ -1,22 +1,13 @@
-"use client";
-
-import { useEffect, useState } from "react";
+const dots = Array.from({ length: 50 }).map((_, index) => ({
+  id: index,
+  top: `${(index * 37) % 100}%`,
+  left: `${(index * 61) % 100}%`,
+  size: `${(index % 3) + 1}px`,
+  delay: `${(index % 7) * 0.7}s`,
+  duration: `${2 + (index % 5) * 0.4}s`,
+}));
 
 export default function AnimatedBackground() {
-  const [dots, setDots] = useState<{ id: number; top: string; left: string; size: string; delay: string; duration: string }[]>([]);
-
-  useEffect(() => {
-    const dotCount = 50;
-    const newDots = Array.from({ length: dotCount }).map((_, i) => ({
-      id: i,
-      top: `${Math.random() * 100}%`,
-      left: `${Math.random() * 100}%`,
-      size: `${Math.random() * 2 + 1}px`,
-      delay: `${Math.random() * 5}s`,
-      duration: `${Math.random() * 3 + 2}s`,
-    }));
-    setDots(newDots);
-  }, []);
 
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">

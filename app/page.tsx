@@ -95,20 +95,41 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const localCars = readLocalCollection();
-    setCollection(localCars);
-    setSelectedId(localCars[0]?.id ?? null);
+    let cancelled = false;
 
-    fetch("/api/cars")
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((data: { cars: CarPhoto[] }) => {
+    const hydrateCollection = async () => {
+      const localCars = readLocalCollection();
+      await Promise.resolve();
+
+      if (cancelled) return;
+
+      setCollection(localCars);
+      setSelectedId(localCars[0]?.id ?? null);
+
+      try {
+        const response = await fetch("/api/cars");
+        if (!response.ok) throw new Error("Unable to load server collection.");
+
+        const data = (await response.json()) as { cars: CarPhoto[] };
+        if (cancelled) return;
+
         if (data.cars.length > 0) {
           setCollection(data.cars);
           setSelectedId(data.cars[0].id);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(data.cars));
         }
-      })
-      .catch(() => setOfflineMode(true));
+      } catch {
+        if (!cancelled) {
+          setOfflineMode(true);
+        }
+      }
+    };
+
+    hydrateCollection();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

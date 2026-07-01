@@ -8,6 +8,10 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+interface NavigatorWithStandalone extends Navigator {
+  standalone?: boolean;
+}
+
 export default function PWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
@@ -26,9 +30,12 @@ export default function PWAInstall() {
         });
     }
 
-    // Check if iOS
-    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    setIsIOS(isIOSDevice);
+    // Check if iOS, including modern iPadOS Safari which can report as Mac.
+    const navigatorWithStandalone = navigator as NavigatorWithStandalone;
+    const isIOSDevice =
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1 && navigatorWithStandalone.standalone !== undefined);
+    window.setTimeout(() => setIsIOS(isIOSDevice), 0);
 
     // Check if already installed
     const isStandalone = window.matchMedia("(display-mode: standalone)").matches;
