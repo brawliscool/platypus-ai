@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Garage Roll
 
-## Getting Started
+A mobile-first PWA for collecting and organizing photos of cars — built for iOS.
 
-First, run the development server:
+## Features
+
+- **Camera capture** — uses `capture="environment"` to open the rear camera directly on iPhone/iPad
+- **Car metadata** — tag make, model, year, color, location, and notes for each spot
+- **Searchable gallery** — filter your collection by any field in real time
+- **Favorites** — star the cars worth revisiting
+- **Detail view** — full-bleed photo with specs at a glance
+- **Offline-first** — photos and data are persisted locally in `localStorage` so your collection is always available, even without a connection
+- **Install to home screen** — fully-configured PWA manifest and service worker; on iOS, tap Share → Add to Home Screen
+
+## Stack
+
+- [Next.js 16](https://nextjs.org) (App Router, TypeScript)
+- [Tailwind CSS v4](https://tailwindcss.com)
+- [Lucide React](https://lucide.dev)
+
+## Getting started
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## API routes
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/cars` | List all saved cars (server-side in-memory store) |
+| `POST` | `/api/cars` | Save a new car entry |
+| `DELETE` | `/api/cars?id=<id>` | Remove a car by id |
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The client writes to `localStorage` on every save so the collection is always available offline; the server store is used as the authoritative source when the app is online.
