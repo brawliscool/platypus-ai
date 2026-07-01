@@ -19,6 +19,26 @@ body {
   overflow-x: hidden;
 }
 
+.garage-input {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(0 0 0 / 0.35);
+  padding: 0.875rem 1rem;
+  color: white;
+  outline: none;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.garage-input::placeholder {
+  color: rgb(113 113 122);
+}
+
+.garage-input:focus {
+  border-color: rgb(252 211 77 / 0.75);
+  background: rgb(0 0 0 / 0.5);
+}
+
 @keyframes fade-in-out {
   0%, 100% { opacity: 0; }
   50% { opacity: 1; }
