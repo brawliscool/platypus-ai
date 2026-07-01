@@ -58,7 +58,7 @@ const cars = [
   },
 ];
 
-export default function Home() {
+export default function Page() {
   return (
     <main className="min-h-screen overflow-hidden bg-[#050608] text-white">
       <section className="mx-auto flex min-h-screen w-full max-w-[390px] flex-col bg-[radial-gradient(circle_at_50%_-10%,#1c2548_0%,#0b0d14_36%,#050608_72%)] px-5 pb-24 pt-5 shadow-2xl shadow-black">
